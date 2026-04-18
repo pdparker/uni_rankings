@@ -536,6 +536,18 @@ tbody tr:hover { background: var(--surface-container); }
     </select>
   </div>
   <div class="filter-group">
+    <label for="sel-group">University Group</label>
+    <select id="sel-group">
+      <option value="">All Universities</option>
+      <option value="go8">Group of 8</option>
+      <option value="iru">IRU</option>
+      <option value="atn">ATN</option>
+      <option value="run">RUN</option>
+      <option value="sacru">SACRU</option>
+      <option value="benchmark">Benchmark Group</option>
+    </select>
+  </div>
+  <div class="filter-group">
     <label>Institution</label>
     <div class="inst-combo" id="inst-combo">
       <div class="inst-combo-input-wrap">
@@ -695,6 +707,85 @@ var LEIDEN_LABELS = {
   lm: 'Leiden MNCS',
   lr: 'Leiden Rank'
 };
+
+// ---- University group definitions ----
+// Names must match D.inst exactly (case-insensitive, whitespace-normalised).
+// Institutions not present in the dataset are silently skipped.
+var GROUP_MEMBERS = {
+  // Australia's Group of Eight research-intensive universities
+  go8: [
+    'Australian National University (ANU)',
+    'The University of Melbourne',
+    'The University of Sydney',
+    'The University of Queensland',
+    'The University of Western Australia',
+    'Adelaide University',   // formed 2024 from U of Adelaide + UniSA
+    'Monash University',
+    'UNSW Sydney'            // not in current dataset
+  ],
+  // Innovative Research Universities (Australia)
+  iru: [
+    'Charles Darwin University',
+    'Flinders University',
+    'Griffith University',
+    'James Cook University',
+    'La Trobe University',
+    'Murdoch University',
+    'Western Sydney University'
+  ],
+  // Australian Technology Network
+  atn: [
+    'Curtin University',
+    'Deakin University',
+    'RMIT University',
+    'Adelaide University',          // UniSA (now merged) was ATN member
+    'University of Technology Sydney',
+    'University of Wollongong'
+    // University of Newcastle (Aus) not in current dataset
+  ],
+  // Regional Universities Network (Australia)
+  run: [
+    'Charles Sturt University',
+    'Southern Cross University',
+    'University of New England Australia',
+    'University of Southern Queensland'
+    // CQUniversity, Federation University, U of Sunshine Coast not in dataset
+  ],
+  // Strategic Alliance of Catholic Research Universities
+  sacru: [
+    'Australian Catholic University',
+    'Boston College',
+    'Pontificia Universidad Católica de Chile (UC)',
+    'Sophia University',
+    'Università Cattolica del Sacro Cuore',  // non-breaking space in source data
+    'Universitat Ramon Llull',
+    'Pontificia Universidad Javeriana'
+    // PUC-Rio, Universidade Católica Portuguesa not in current dataset
+  ],
+  // Custom benchmark group
+  benchmark: [
+    'Flinders University',
+    'La Trobe University',
+    'Southern Cross University',
+    'University of Tasmania',
+    'Victoria University'
+    // U of Newcastle (Aus), U of Notre Dame Australia, U of Sunshine Coast not in dataset
+  ]
+};
+
+// Pre-build inst-index sets — exact case-insensitive match with whitespace normalisation
+var groupInstSets = {};
+(function() {
+  function norm(s) { return s.toLowerCase().replace(/[\s ]+/g, ' ').trim(); }
+  Object.keys(GROUP_MEMBERS).forEach(function(key) {
+    var members = GROUP_MEMBERS[key].map(norm);
+    var set = new Set();
+    D.inst.forEach(function(name, i) {
+      if (members.indexOf(norm(name)) >= 0) set.add(i);
+    });
+    groupInstSets[key] = set;
+  });
+})();
 
 // ---- State ----
 var filteredRows = D.rows.slice();
@@ -866,6 +957,7 @@ document.getElementById('sel-cat').addEventListener('change', function() {
 });
 document.getElementById('sel-subj').addEventListener('change', applyFilters);
 document.getElementById('sel-ctry').addEventListener('change', applyFilters);
+document.getElementById('sel-group').addEventListener('change', applyFilters);
 // inst combo event wired inside initInstCombo()
 document.getElementById('sel-leiden').addEventListener('change', function() {
   updateLeidenSubtitles();
@@ -886,18 +978,21 @@ function updateLeidenSubtitles() {
 }
 
 function applyFilters() {
-  var catVal  = document.getElementById('sel-cat').value;
-  var subjVal = document.getElementById('sel-subj').value;
-  var ctryVal = document.getElementById('sel-ctry').value;
+  var catVal   = document.getElementById('sel-cat').value;
+  var subjVal  = document.getElementById('sel-subj').value;
+  var ctryVal  = document.getElementById('sel-ctry').value;
+  var groupVal = document.getElementById('sel-group').value;
 
   var catIdx  = catVal  === '' ? -1 : parseInt(catVal);
   var subjIdx = subjVal === '' ? -1 : parseInt(subjVal);
   var ctryIdx = ctryVal === '' ? -1 : parseInt(ctryVal);
+  var groupSet = (groupVal && groupInstSets[groupVal]) ? groupInstSets[groupVal] : null;
 
   filteredRows = D.rows.filter(function(row) {
     if (catIdx  >= 0 && row[CI.cat]  !== catIdx)  return false;
     if (subjIdx >= 0 && row[CI.subj] !== subjIdx) return false;
     if (ctryIdx >= 0 && row[CI.ctry] !== ctryIdx) return false;
+    if (groupSet && !groupSet.has(row[CI.inst]))  return false;
     return true;
   });
 
