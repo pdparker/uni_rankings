@@ -507,6 +507,7 @@ tbody tr:hover { background: var(--surface-container); }
   line-height: 1.8;
 }
 </style>
+<script src="https://pdparker.github.io/dashboard-commons/commons.js" data-dash="rankings"></script>
 </head>
 <body>
 
@@ -569,6 +570,10 @@ tbody tr:hover { background: var(--surface-container); }
   <div class="filter-group">
     <label for="inp-maxpts">Max Scatter Points</label>
     <input type="number" id="inp-maxpts" value="250" min="10" max="2000" step="50">
+  </div>
+  <div class="filter-group">
+    <label>&nbsp;</label>
+    <button id="btn-export-csv" type="button" style="cursor:pointer;padding:6px 12px;border:1px solid var(--on-surface-variant,#888);border-radius:6px;background:#fff;font-size:0.85rem;">&#8681; Export CSV</button>
   </div>
 </div>
 
@@ -842,6 +847,7 @@ function initInstCombo() {
     dropdown.classList.remove('open');
     renderScatters();
     sortAndRender();
+    if (typeof syncUrl === 'function') syncUrl();
   }
 
   function clearInst() {
@@ -851,6 +857,7 @@ function initInstCombo() {
     dropdown.classList.remove('open');
     renderScatters();
     sortAndRender();
+    if (typeof syncUrl === 'function') syncUrl();
   }
 
   input.addEventListener('focus', function() {
@@ -876,6 +883,10 @@ function initInstCombo() {
   });
 
   clearBtn.addEventListener('click', clearInst);
+
+  // dashboard-commons: expose selection for URL-state restore
+  window.rankingsSelectInst = selectInst;
+  window.rankingsClearInst = clearInst;
 }
 
 // ---- Init filter dropdowns ----
@@ -965,6 +976,94 @@ document.getElementById('sel-leiden').addEventListener('change', function() {
 });
 document.getElementById('inp-maxpts').addEventListener('change', renderScatters);
 document.getElementById('inp-maxpts').addEventListener('input', renderScatters);
+
+// ---- dashboard-commons: URL state ----
+function syncUrl() {
+  if (typeof DashCommons === 'undefined') return;
+  var catV = document.getElementById('sel-cat').value;
+  var subjV = document.getElementById('sel-subj').value;
+  var ctryV = document.getElementById('sel-ctry').value;
+  var groupV = document.getElementById('sel-group').value;
+  var leidenV = document.getElementById('sel-leiden').value;
+  var maxptsV = document.getElementById('inp-maxpts').value;
+  DashCommons.state.set('cat', catV || null);
+  DashCommons.state.set('subj', subjV || null);
+  DashCommons.state.set('ctry', ctryV || null);
+  DashCommons.state.set('group', groupV || null);
+  DashCommons.state.set('leiden', leidenV === 'lp' ? null : leidenV);
+  DashCommons.state.set('maxpts', maxptsV === '250' ? null : maxptsV);
+  DashCommons.state.set('inst', selectedInstIdx >= 0 ? D.inst[selectedInstIdx] : null);
+}
+document.getElementById('sel-cat').addEventListener('change', syncUrl);
+document.getElementById('sel-subj').addEventListener('change', syncUrl);
+document.getElementById('sel-ctry').addEventListener('change', syncUrl);
+document.getElementById('sel-group').addEventListener('change', syncUrl);
+document.getElementById('sel-leiden').addEventListener('change', syncUrl);
+document.getElementById('inp-maxpts').addEventListener('change', syncUrl);
+
+function initFromUrl() {
+  if (typeof DashCommons === 'undefined') { applyFilters(); return; }
+
+  var catV = DashCommons.state.get('cat');
+  if (catV !== null && document.querySelector('#sel-cat option[value="' + catV + '"]')) {
+    document.getElementById('sel-cat').value = catV;
+    repopulateSubjects(parseInt(catV));
+  }
+  var subjV = DashCommons.state.get('subj');
+  if (subjV !== null) document.getElementById('sel-subj').value = subjV;
+
+  var ctryV = DashCommons.state.get('ctry');
+  if (ctryV !== null) document.getElementById('sel-ctry').value = ctryV;
+
+  var groupV = DashCommons.state.get('group');
+  if (groupV !== null) document.getElementById('sel-group').value = groupV;
+
+  var leidenV = DashCommons.state.get('leiden', 'lp');
+  document.getElementById('sel-leiden').value = leidenV;
+  updateLeidenSubtitles();
+
+  var maxptsV = DashCommons.state.get('maxpts', '250');
+  document.getElementById('inp-maxpts').value = maxptsV;
+
+  var instV = DashCommons.state.get('inst');
+  if (instV) {
+    var idx = D.inst.indexOf(instV);
+    if (idx >= 0 && window.rankingsSelectInst) window.rankingsSelectInst(idx, instV);
+  }
+
+  applyFilters();
+}
+
+// ---- CSV export (all filtered rows, not just the current page) ----
+function exportRankingsCsv() {
+  var header = TABLE_COLS.map(function (c) { return c.label; });
+  var csvRows = [header];
+  filteredRows.forEach(function (row) {
+    csvRows.push(TABLE_COLS.map(function (c) {
+      var v = getSortVal(row, c.key);
+      if (c.key === 'inst' || c.key === 'ctry' || c.key === 'subj') {
+        return c.key === 'inst' ? inst(row) : c.key === 'ctry' ? ctry(row) : subj(row);
+      }
+      return isFinite(v) ? v : '';
+    }));
+  });
+  var csv = csvRows.map(function (r) {
+    return r.map(function (v) {
+      var s = String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',');
+  }).join('\n');
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'university-rankings-filtered.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+document.getElementById('btn-export-csv').addEventListener('click', exportRankingsCsv);
 
 function updateLeidenSubtitles() {
   var metric = document.getElementById('sel-leiden').value;
@@ -1465,7 +1564,7 @@ function adjustHeaderOffset() {
 window.addEventListener('load', adjustHeaderOffset);
 window.addEventListener('resize', adjustHeaderOffset);
 
-applyFilters();
+initFromUrl();
 </script>
 </body>
 </html>
