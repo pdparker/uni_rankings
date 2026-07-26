@@ -542,6 +542,7 @@ tbody tr:hover { background: var(--surface-container); }
   .filter-bar,
   .pagination,
   #btn-export-csv,
+  .btn-export-png,
   #dashcommons-nav {
     display: none !important;
   }
@@ -762,6 +763,9 @@ tbody tr:hover { background: var(--surface-container); }
       <div class="scatter-canvas-wrap">
         <canvas id="sc1"></canvas>
       </div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button id="btn-png-sc1" type="button" class="btn-export-png" style="cursor:pointer;padding:6px 12px;border:1px solid var(--on-surface-variant,#888);border-radius:6px;background:#fff;font-size:0.85rem;">&#8681; Download PNG</button>
+      </div>
     </div>
     <div class="scatter-card">
       <div class="scatter-header">
@@ -777,6 +781,9 @@ tbody tr:hover { background: var(--surface-container); }
       <div class="scatter-canvas-wrap">
         <canvas id="sc2"></canvas>
       </div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button id="btn-png-sc2" type="button" class="btn-export-png" style="cursor:pointer;padding:6px 12px;border:1px solid var(--on-surface-variant,#888);border-radius:6px;background:#fff;font-size:0.85rem;">&#8681; Download PNG</button>
+      </div>
     </div>
     <div class="scatter-card">
       <div class="scatter-header">
@@ -791,6 +798,9 @@ tbody tr:hover { background: var(--surface-container); }
       </div>
       <div class="scatter-canvas-wrap">
         <canvas id="sc3"></canvas>
+      </div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button id="btn-png-sc3" type="button" class="btn-export-png" style="cursor:pointer;padding:6px 12px;border:1px solid var(--on-surface-variant,#888);border-radius:6px;background:#fff;font-size:0.85rem;">&#8681; Download PNG</button>
       </div>
     </div>
   </div>
@@ -1263,6 +1273,28 @@ function exportRankingsCsv() {
   URL.revokeObjectURL(url);
 }
 document.getElementById('btn-export-csv').addEventListener('click', exportRankingsCsv);
+
+// ---- Chart PNG export ----
+// chart.resize() first: Chart.js canvases can retain a stale screen-layout
+// pixel size after grid/layout changes (see the beforeprint fix above), so
+// force a re-measure before rasterising to be sure the PNG matches what's
+// actually on screen.
+function downloadChartPng(chartKey, filenameBase) {
+  var chartInstance = charts[chartKey];
+  if (!chartInstance) return;
+  chartInstance.resize();
+  var url = chartInstance.toBase64Image();
+  DashCommons.downloadFile(url, filenameBase + '-' + new Date().toISOString().slice(0, 10) + '.png');
+}
+document.getElementById('btn-png-sc1').addEventListener('click', function () {
+  downloadChartPng('sc1', 'uni-rankings-qs-vs-the-scatter');
+});
+document.getElementById('btn-png-sc2').addEventListener('click', function () {
+  downloadChartPng('sc2', 'uni-rankings-qs-vs-leiden-scatter');
+});
+document.getElementById('btn-png-sc3').addEventListener('click', function () {
+  downloadChartPng('sc3', 'uni-rankings-the-vs-leiden-scatter');
+});
 
 function updateLeidenSubtitles() {
   var metric = document.getElementById('sel-leiden').value;
