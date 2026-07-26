@@ -3,7 +3,7 @@
   "title": "University Rankings",
   "url": "https://pdparker.github.io/uni_rankings/",
   "repo": "pdparker/uni_rankings",
-  "lastBuild": "2026-04-18",
+  "lastBuild": "2026-07-27",
   "dataSources": [
     { "name": "QS World University Rankings by Subject", "vintage": "2026 edition" },
     { "name": "Times Higher Education World University Rankings", "vintage": "2026 edition" },

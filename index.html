@@ -472,6 +472,9 @@ tbody tr:hover { background: var(--surface-container); }
 }
 .inst-option:hover { background: var(--surface-container); }
 .inst-option.inst-selected { color: var(--secondary); font-weight: 600; }
+.inst-option.inst-active { background: var(--surface-container); outline: 2px solid var(--secondary); outline-offset: -2px; }
+.inst-combo-clear:focus-visible,
+.inst-combo-input:focus-visible { box-shadow: 0 0 0 2px rgba(121,76,144,0.45); }
 .inst-option-empty {
   padding: 10px 12px;
   font-size: 12px;
@@ -506,10 +509,143 @@ tbody tr:hover { background: var(--surface-container); }
   padding: 0 28px 32px;
   line-height: 1.8;
 }
+
+/* ---- PRINT-ONLY HEADER (hidden on screen, shown in @media print) ---- */
+.print-only { display: none; }
+
+/* ---- PRINT STYLESHEET (board-pack ready) ---- */
+@page {
+  size: landscape;
+  margin: 14mm;
+}
+
+@media print {
+  /* Print-only masthead */
+  .print-only {
+    display: block !important;
+    margin-bottom: 14px;
+  }
+  .print-header-title {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 20px;
+    color: var(--on-surface);
+  }
+  .print-header-meta {
+    font-family: var(--font-body);
+    font-size: 11px;
+    color: var(--on-surface-variant);
+    margin-top: 2px;
+  }
+
+  /* Hide interactive-only chrome */
+  .filter-bar,
+  .pagination,
+  #btn-export-csv,
+  #dashcommons-nav {
+    display: none !important;
+  }
+
+  /* Page background: white, no ink-heavy fills, except where color IS the data */
+  html, body, .page-wrapper, .kpi-card, .scatter-card, .table-section {
+    background: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  body {
+    font-size: 11px;
+  }
+
+  /* Remove fixed-header offset since the filter bar is hidden in print */
+  .page-wrapper {
+    margin-top: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Color is meaningful here (institution/category palette, ranking bands) —
+     force exact color reproduction rather than letting the browser strip it */
+  .scatter-canvas-wrap, canvas,
+  .cat-legend, .cat-dot,
+  .rank-pill, .mini-bar-fill,
+  .kpi-card.accent {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* kpi-card.accent keeps its gradient fill (it's a meaningful accent, not page chrome) */
+  .kpi-card.accent {
+    background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-container) 100%) !important;
+  }
+
+  /* Avoid awkward mid-element page breaks */
+  .kpi-card,
+  .scatter-card,
+  .table-section,
+  .cat-legend,
+  tr, td, th {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .kpi-grid, .scatter-grid {
+    break-inside: avoid;
+  }
+
+  /* Repeat table header on every printed page */
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Expand anything that scrolls/clips on screen so print isn't cut off */
+  .table-scroll {
+    overflow-x: visible !important;
+  }
+  .table-section {
+    overflow: visible !important;
+  }
+  .inst-dropdown {
+    display: none !important;
+  }
+
+  /* Condensed table typography so the wide ranking table fits the printed page width */
+  table {
+    font-size: 9px;
+    width: 100%;
+    table-layout: auto;
+  }
+  th, td {
+    padding: 4px 6px;
+  }
+  .cell-subj { font-size: 9px; }
+
+  /* Charts: fixed canvas height on screen is fine for print rasterisation.
+     min-width:0 stops the canvas's screen-layout pixel width (set by Chart.js)
+     from blowing out the grid track and wrapping the 3rd chart to its own row. */
+  .scatter-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .scatter-card, .kpi-card {
+    min-width: 0;
+  }
+  .scatter-canvas-wrap, .scatter-canvas-wrap canvas {
+    max-width: 100% !important;
+  }
+
+  a[href]::after { content: none !important; }
+}
 </style>
 <script src="https://pdparker.github.io/dashboard-commons/commons.js" data-dash="rankings"></script>
 </head>
 <body>
+
+<!-- PRINT-ONLY HEADER: shown only in @media print, see <style> block -->
+<div class="print-only" id="print-header">
+  <div class="print-header-title">University Rankings Comparator &mdash; QS &middot; THE &middot; Leiden</div>
+  <div class="print-header-meta">Printed from pdparker.github.io/uni_rankings/ &middot; <span id="print-date"></span></div>
+</div>
 
 <!-- STICKY FILTER BAR -->
 <div class="filter-bar">
@@ -553,10 +689,13 @@ tbody tr:hover { background: var(--surface-container); }
     <div class="inst-combo" id="inst-combo">
       <div class="inst-combo-input-wrap">
         <input type="text" class="inst-combo-input" id="inst-search"
-               placeholder="Search &amp; select…" autocomplete="off" spellcheck="false">
-        <span class="inst-combo-clear" id="inst-clear" title="Clear">&#x2715;</span>
+               placeholder="Search &amp; select…" autocomplete="off" spellcheck="false"
+               role="combobox" aria-autocomplete="list" aria-expanded="false"
+               aria-haspopup="listbox" aria-controls="inst-dropdown">
+        <span class="inst-combo-clear" id="inst-clear" title="Clear" role="button"
+              tabindex="0" aria-label="Clear institution selection">&#x2715;</span>
       </div>
-      <div class="inst-dropdown" id="inst-dropdown"></div>
+      <div class="inst-dropdown" id="inst-dropdown" role="listbox" aria-label="Institution options"></div>
     </div>
   </div>
   <div class="filter-group">
@@ -811,6 +950,26 @@ function initInstCombo() {
   var dropdown = document.getElementById('inst-dropdown');
   var clearBtn = document.getElementById('inst-clear');
   var closeTimer = null;
+  var activeIndex = -1;   // index into the currently-rendered option list (keyboard nav)
+  var shownItems = [];    // the item objects currently rendered as options
+
+  function setExpanded(isOpen) {
+    input.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (isOpen) dropdown.classList.add('open'); else dropdown.classList.remove('open');
+  }
+
+  function setActive(idx) {
+    var opts = dropdown.querySelectorAll('.inst-option');
+    opts.forEach(function(o) { o.classList.remove('inst-active'); });
+    activeIndex = idx;
+    if (idx >= 0 && opts[idx]) {
+      opts[idx].classList.add('inst-active');
+      opts[idx].scrollIntoView({ block: 'nearest' });
+      input.setAttribute('aria-activedescendant', opts[idx].id);
+    } else {
+      input.removeAttribute('aria-activedescendant');
+    }
+  }
 
   function renderDropdown(query) {
     var q = (query || '').toLowerCase().trim();
@@ -819,6 +978,8 @@ function initInstCombo() {
     });
 
     dropdown.innerHTML = '';
+    activeIndex = -1;
+    shownItems = [];
     if (matches.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'inst-option-empty';
@@ -828,14 +989,19 @@ function initInstCombo() {
     }
     // Limit rendered options to 200 for performance
     var shown = matches.slice(0, 200);
-    shown.forEach(function(item) {
+    shownItems = shown;
+    shown.forEach(function(item, i) {
       var div = document.createElement('div');
       div.className = 'inst-option' + (item.i === selectedInstIdx ? ' inst-selected' : '');
+      div.id = 'inst-option-' + item.i;
+      div.setAttribute('role', 'option');
+      div.setAttribute('aria-selected', item.i === selectedInstIdx ? 'true' : 'false');
       div.textContent = item.name;
       div.addEventListener('mousedown', function(e) {
         e.preventDefault(); // prevent input blur before click fires
         selectInst(item.i, item.name);
       });
+      div.addEventListener('mouseenter', function() { setActive(i); });
       dropdown.appendChild(div);
     });
   }
@@ -844,7 +1010,7 @@ function initInstCombo() {
     selectedInstIdx = idx;
     input.value = name;
     clearBtn.style.display = 'block';
-    dropdown.classList.remove('open');
+    setExpanded(false);
     renderScatters();
     sortAndRender();
     if (typeof syncUrl === 'function') syncUrl();
@@ -854,7 +1020,7 @@ function initInstCombo() {
     selectedInstIdx = -1;
     input.value = '';
     clearBtn.style.display = 'none';
-    dropdown.classList.remove('open');
+    setExpanded(false);
     renderScatters();
     sortAndRender();
     if (typeof syncUrl === 'function') syncUrl();
@@ -863,26 +1029,59 @@ function initInstCombo() {
   input.addEventListener('focus', function() {
     clearTimeout(closeTimer);
     renderDropdown(this.value);
-    dropdown.classList.add('open');
+    setExpanded(true);
   });
 
   input.addEventListener('input', function() {
     selectedInstIdx = -1;
     clearBtn.style.display = 'none';
     renderDropdown(this.value);
-    dropdown.classList.add('open');
+    setExpanded(true);
   });
 
   input.addEventListener('blur', function() {
     // Delay so mousedown on an option fires first
     closeTimer = setTimeout(function() {
-      dropdown.classList.remove('open');
+      setExpanded(false);
       // If nothing selected, reset text
       if (selectedInstIdx < 0) input.value = '';
     }, 150);
   });
 
+  // ---- Keyboard support: Arrow Up/Down to move, Enter to select, Escape to close ----
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!dropdown.classList.contains('open')) {
+        renderDropdown(input.value);
+        setExpanded(true);
+      }
+      if (shownItems.length > 0) setActive(Math.min(activeIndex + 1, shownItems.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (shownItems.length > 0) setActive(Math.max(activeIndex - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (dropdown.classList.contains('open') && activeIndex >= 0 && shownItems[activeIndex]) {
+        e.preventDefault();
+        var item = shownItems[activeIndex];
+        selectInst(item.i, item.name);
+      }
+    } else if (e.key === 'Escape') {
+      if (dropdown.classList.contains('open')) {
+        e.preventDefault();
+        setExpanded(false);
+        if (selectedInstIdx < 0) input.value = '';
+      }
+    }
+  });
+
   clearBtn.addEventListener('click', clearInst);
+  clearBtn.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      clearInst();
+    }
+  });
 
   // dashboard-commons: expose selection for URL-state restore
   window.rankingsSelectInst = selectInst;
@@ -1565,6 +1764,21 @@ window.addEventListener('load', adjustHeaderOffset);
 window.addEventListener('resize', adjustHeaderOffset);
 
 initFromUrl();
+
+// ---- Print-only header: stamp the actual print date just before printing ----
+// Also force Chart.js to re-measure its canvases against the print layout —
+// responsive:true relies on a ResizeObserver that isn't guaranteed to fire
+// before the browser rasterizes the print stylesheet, which can leave charts
+// sized for the screen layout instead of the print one.
+window.addEventListener('beforeprint', function() {
+  var el = document.getElementById('print-date');
+  if (el) {
+    el.textContent = new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+  Object.keys(charts).forEach(function(k) {
+    if (charts[k]) charts[k].resize();
+  });
+});
 </script>
 </body>
 </html>
